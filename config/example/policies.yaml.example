@@ -1,0 +1,30 @@
+# claude-workflow — guards / policies.
+#
+# Copy to config/policies.yaml. These are the same constants that previously
+# lived in shared/config.py as Python literals; lift them to YAML so they
+# can be tweaked per-team without code edits.
+
+# Branches that must NEVER receive an auto-deploy / write action.
+protected_refs:
+  - master
+  - main
+  - release
+
+# Prefixes treated the same way as exact matches (e.g. release/1.2.3).
+protected_ref_prefixes:
+  - release/
+
+# Environment names that are off-limits to deploy commands.
+protected_environments:
+  - production
+  - staging
+
+# QA slot names accepted by `workflow deploy <project_id> <branch> <slot>`.
+# Empty list disables the QA flow entirely.
+allowed_qa_slots:
+  - qa1
+  - qa2
+  - qa3
+  - qa4
+  - qa5
+  - qa6

@@ -1,0 +1,98 @@
+# claude-workflow — target product repos.
+#
+# Copy to config/projects.yaml. Every project that the orchestrator works on
+# must be listed here. Slug is the unique id (used in tasks/<slug>/<KEY>/
+# folders, agent prompts, MCP tool inputs).
+#
+# Multi-account support: each module block may reference a named `account`.
+# Account credentials live in config/<module>/.env as
+# `<MODULE>__<ACCOUNT>__<VAR>` (e.g. GITLAB__DEFAULT__TOKEN). Phase 7 enables
+# the lookup; for Phase 2 the loader uses the legacy single-account scheme
+# unless explicit `<MODULE>__<ACCOUNT>__` keys are present.
+
+projects:
+  - slug: example-frontend
+    name: Example Frontend
+    repo_path: ~/work/example-frontend       # absolute or ~/ path to the product repo
+    # Optional named alternative checkouts. The orchestrator switches to one
+    # ONLY when you explicitly name the alias ("делай в work2"); otherwise
+    # repo_path is always used. Same project, different checkout location.
+    # alt_repo_paths:
+    #   work2: ~/work2/example-frontend
+    style_guide: config/style-guides/example-frontend/style-guide.md   # generate via `workflow add-style-guide` or `/style-guide-generator`
+    default_branch: main
+    mr_title_rule: branch-name               # branch-name | jira-summary | custom
+    # VCS binding (Epic A — multi-provider). Preferred over the legacy `gitlab:`
+    # block below. provider selects the implementation; the credential env dir
+    # == provider name (config/<provider>/.env); account selects the named
+    # account within it. Repo identity is provider-shaped:
+    #   gitlab    -> project_id (numeric)
+    #   github    -> owner + repo
+    #   bitbucket -> owner (workspace) + repo (repo_slug)
+    # vcs:
+    #   provider: github                       # gitlab | github | bitbucket
+    #   account: default
+    #   owner: example-org                      # github owner / bitbucket workspace
+    #   repo: example-frontend                  # github repo / bitbucket repo_slug
+    #   # host: ghe.example.com                # GitHub Enterprise / self-hosted GitLab only
+    # Write for github/bitbucket is opt-in: GITHUB_WRITE_ENABLED / BITBUCKET_WRITE_ENABLED
+    # (default false) in the provider's .env. GitLab keeps GITLAB_WRITE_ENABLED (default true).
+    #
+    # Legacy single-provider block — still supported. If `vcs:` is omitted, a
+    # gitlab-provider binding is derived from this automatically.
+    gitlab:
+      host: gitlab.example.com               # without scheme
+      project_id: 0                          # numeric project id from GitLab UI
+      account: default
+    jira:
+      project_key: DEV
+      account: default
+    sentry:
+      project_slug: frontend                 # null if Sentry not used
+      account: default
+    tester:
+      config: config/tester/example-frontend.yaml
+    qa_slots: []                             # e.g. [qa1, qa2, qa3] — empty disables QA flow
+    # profile — operational/stack knobs agents execute (kept out of the
+    # stack-agnostic agent contracts). All keys optional.
+    profile:
+      languages: [ts, vue, scss]             # stack tags
+      dev_server:                            # how code-tester brings the app up locally
+        cmd: npm run dev                     # PHP example: "docker compose up -d"
+        ready_url: http://localhost:5173
+      checks:                                # local-checks command set, scoped to the diff
+        - { tool: eslint,   globs: ["*.ts", "*.tsx", "*.vue", "*.js"] }
+        - { tool: prettier, globs: ["*.ts", "*.vue", "*.scss"] }
+        - { tool: tsc }                      # no globs → whole-project typecheck
+      browser_testable: true                 # true/false force tester; omit to let planner decide
+      token_search: "rtk grep '$' src/"      # optional: where design tokens live
+
+  # ── Polyglot example (PHP host + JS submodules, e.g. a "host-app") ──────
+  # Shows a profile for a non-Vue, non-SPA project. A polyglot host usually has
+  # JS sub-repos as git submodules — list each submodule as its OWN project
+  # entry (own slug + style_guide + profile), so reviews/tests resolve per repo.
+  # The host entry below describes only the PHP/host layer.
+  - slug: example-host-app
+    name: Example Host App (PHP host)
+    repo_path: ~/work/example-host-app
+    style_guide: config/style-guides/example-host-app/style-guide.md   # polyglot guide links to per-layer sub-guides
+    default_branch: master
+    mr_title_rule: branch-name
+    # vcs: bitbucket is common for this kind of repo — see the vcs: block above.
+    jira:
+      project_key: HOST
+      account: default
+    sentry:
+      project_slug: null                     # null if Sentry not used
+      account: default
+    tester:
+      config: null                           # host has no SPA dev-server; submodules carry their own
+    qa_slots: []
+    profile:
+      languages: [php, js]                   # PHP + AngularJS/web-components, React lives in a submodule
+      dev_server:                            # PHP host comes up via docker, not a node dev-server
+        cmd: docker compose -f docker-compose.local.yml up -d
+        ready_url: http://localhost:8080
+      checks: []                             # add { tool: phpcs } / { tool: phpstan } only if the repo actually configures them
+      # browser_testable omitted on purpose → let the planner's ## Verification
+      # decide per task (a PHP-template tweak usually has no browser surface).
