@@ -263,6 +263,31 @@ def cmd_branches(client, ref, provider: str):
                 print()
 
 
+def cmd_find(project_id: int, term: str):
+    """MRs and branches for a task key when Jira's Development panel is empty.
+
+    Three sources, deduped by MR iid: MR title/description search, branch-name
+    search, and the MRs opened from each matching branch.
+    """
+    gl = _get_client()
+    branches = gl.search_branches(project_id, term)
+    mrs = {m["iid"]: m for m in gl.search_mrs(project_id, term)}
+    for b in branches[:10]:
+        for m in gl.list_mrs(project_id, state="all", source_branch=b["name"]):
+            mrs.setdefault(m["iid"], m)
+    print(f"\n  Поиск «{term}» в проекте {project_id}:\n")
+    print(f"  Ветки ({len(branches)}):")
+    for b in branches:
+        c = b.get("commit") or {}
+        print(f"    {b['name']}  {c.get('short_id', '')}  {(c.get('committed_date') or '')[:10]}")
+    print(f"\n  MR ({len(mrs)}):")
+    for m in sorted(mrs.values(), key=lambda m: m.get("updated_at") or "", reverse=True):
+        author = (m.get("author") or {}).get("username", "?")
+        print(f"    !{m['iid']}  [{m.get('state')}]  {m.get('source_branch')} -> {m.get('target_branch')}  @{author}")
+        print(f"         {m.get('title')}")
+    print()
+
+
 def cmd_mr_changes(client, ref, mr_iid: int):
     changes = client.get_mr_changes(ref, mr_iid)
     print(f"\n  Изменения MR !{mr_iid} ({len(changes)} файлов):\n")
@@ -434,6 +459,21 @@ def cmd_file(project_id: int, path: str, ref: str = "HEAD", as_list: bool = Fals
     print(client.get_file(project_id, path, ref))
 
 
+def cmd_code_search(project_id: int, term: str, ref: str = "", limit: int = 30):
+    hits = _get_client().search_code(project_id, term, ref or None)
+    if not hits:
+        print(f"  Нет совпадений для «{term}»" + (f" в {ref}" if ref else ""))
+        return
+    for hit in hits[:limit]:
+        start = hit.get("startline") or 0
+        lines = (hit.get("data") or "").splitlines()
+        offset = next((i for i, line in enumerate(lines) if term.lower() in line.lower()), 0)
+        snippet = lines[offset].strip() if lines else ""
+        print(f"  {hit.get('path')}:{start + offset}  {snippet[:160]}")
+    if len(hits) > limit:
+        print(f"  … ещё {len(hits) - limit} (уточните запрос или --limit=)")
+
+
 def cmd_ci(project_id: int):
     try:
         content = _get_client().get_file(project_id, ".gitlab-ci.yml")
@@ -591,8 +631,9 @@ GITLAB_COMMANDS = {
     "info", "projects", "mrs", "mr", "mr-changes", "mr-diff", "mr-notes",
     "mr-discussions", "mr-inline-comment", "pipelines", "pipeline",
     "job-log", "pipeline-failures", "envs",
-    "branches", "ci", "rules", "open-mr", "edit-mr", "comment",
+    "branches", "find", "ci", "rules", "open-mr", "edit-mr", "comment",
     "deploy", "deploy-auto", "deploy-play-manual", "recent-deploys", "file",
+    "code-search",
 }
 
 # Commands whose first positional argument is a repo token (slug / numeric
@@ -600,9 +641,9 @@ GITLAB_COMMANDS = {
 # special: with a positional the arg IS the repo; with none it lists my MRs.
 _NO_REPO_COMMANDS = {"projects"}
 _GITLAB_ONLY_COMMANDS = {
-    "projects", "pipeline", "job-log", "pipeline-failures", "envs", "ci",
+    "projects", "pipeline", "job-log", "pipeline-failures", "envs", "ci", "find",
     "rules", "edit-mr", "deploy", "deploy-auto", "deploy-play-manual",
-    "recent-deploys", "file",
+    "recent-deploys", "file", "code-search",
 }
 
 
@@ -710,6 +751,11 @@ def run_command(cmd: str, parts: list, jira_client=None) -> bool:
             cmd_envs(ref.require_project_id())
         elif cmd == "branches":
             cmd_branches(get_vcs_client(provider, account), ref, provider)
+        elif cmd == "find":
+            if len(parts) < 3:
+                print("  Использование: find <repo> <term>   (ключ задачи или слово из ветки)")
+            else:
+                cmd_find(ref.require_project_id(), parts[2])
         elif cmd == "ci":
             cmd_ci(ref.require_project_id())
         elif cmd == "file":
@@ -718,6 +764,13 @@ def run_command(cmd: str, parts: list, jira_client=None) -> bool:
             else:
                 ref_flag = next((p[6:] for p in parts[3:] if p.startswith("--ref=")), "HEAD")
                 cmd_file(ref.require_project_id(), parts[2], ref_flag, as_list="--list" in parts[3:])
+        elif cmd == "code-search":
+            if len(parts) < 3:
+                print("  Использование: code-search <repo> <term> [--ref=<branch|sha>] [--limit=N]")
+            else:
+                ref_flag = next((p[6:] for p in parts[3:] if p.startswith("--ref=")), "")
+                limit = next((int(p[8:]) for p in parts[3:] if p.startswith("--limit=")), 30)
+                cmd_code_search(ref.require_project_id(), parts[2], ref_flag, limit)
         elif cmd == "rules":
             cmd_rules(ref.require_project_id())
         elif cmd == "open-mr":

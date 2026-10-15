@@ -45,6 +45,8 @@ HELP = """
     mr-diff <project> <id> [--file=<path>]  — diff
     mr-notes <project> <id>                 — MR comments
     file <project> <path> [--ref=<branch|sha>] [--list]  — file (or dir listing) at a ref
+    find <project> <KEY>                    — MRs + branches by task key (empty Development panel)
+    code-search <project> <term> [--ref=] [--limit=N]  — code search in a repo
 
   Pay-hook (prints a signed synthetic webhook curl, never sends; non-prod hosts only):
     pay-hook <provider> deposit|withdrawal --status=<s> --request-id=<id> --payment-id=<id> --amount=<minor>

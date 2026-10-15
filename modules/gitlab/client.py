@@ -198,6 +198,19 @@ class GitLabClient:
     def list_branches(self, project_id: int) -> list:
         return self._paginate(f"/projects/{project_id}/repository/branches")
 
+    def search_branches(self, project_id: int, term: str) -> list:
+        """Branches whose name matches ``term`` (GitLab search is case-insensitive)."""
+        return self._paginate(
+            f"/projects/{project_id}/repository/branches", {"search": term}
+        )
+
+    def search_mrs(self, project_id: int, term: str, state: str = "all") -> list:
+        """MRs whose title or description matches ``term``, newest first."""
+        return self._get(
+            f"/projects/{project_id}/merge_requests",
+            {"search": term, "state": state, "order_by": "updated_at", "per_page": 20},
+        )
+
     def get_branch(self, project_id: int, branch: str) -> dict:
         return self._get(f"/projects/{project_id}/repository/branches/{quote(branch, safe='')}")
 
@@ -323,6 +336,13 @@ class GitLabClient:
             f"/projects/{project_id}/repository/tree",
             {"path": path, "ref": ref, "recursive": False},
         )
+
+    def search_code(self, project_id: int, term: str, ref: Optional[str] = None, max_pages: int = 2) -> list:
+        """Blob search in one project (basic search: exact-ish term, default branch unless ``ref``)."""
+        params = {"scope": "blobs", "search": term, "per_page": 50}
+        if ref:
+            params["ref"] = ref
+        return self._paginate(f"/projects/{project_id}/search", params, max_pages=max_pages)
 
     def list_mr_templates(self, project_id: int) -> list:
         try:
